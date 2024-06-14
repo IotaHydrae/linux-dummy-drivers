@@ -134,11 +134,12 @@ static int dummy_video_start_streaming(struct vb2_queue *vq, unsigned int count)
 {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 9, 191)
     timer_setup(&g_dummy_video->timer, dummy_video_timer_func, 0);
-    g_dummy_video->timer.expires = jiffies + HZ / 30;
-    add_timer(&g_dummy_video->timer);
 #else
     setup_timer(&g_dummy_video->timer, dummy_video_timer_func, 0);
 #endif
+
+    g_dummy_video->timer.expires = jiffies + HZ / 30;
+    add_timer(&g_dummy_video->timer);
     return 0;
 }
 
@@ -205,6 +206,19 @@ static int dummy_video_enum_framesizes(struct file *file, void *fh,
 	return 0;
 }
 
+static int dummy_video_g_fmt_vid_cap(struct file *file, void *fh,
+				    struct v4l2_format *f)
+{
+    struct v4l2_pix_format *pix = &f->fmt.pix;
+
+	pix->width = 800;
+	pix->height = 600;
+	pix->field = V4L2_FIELD_ANY;
+	pix->pixelformat = V4L2_PIX_FMT_MJPEG;
+    pix->bytesperline = 0;
+    return 0;
+}
+
 // /*
 //     * Sanity check
 //     */
@@ -231,6 +245,7 @@ static const struct v4l2_ioctl_ops dummy_video_ioctl_ops =  {
 	.vidioc_enum_fmt_vid_cap  = dummy_video_enum_fmt_vid_cap,
 	.vidioc_s_fmt_vid_cap     = dummy_video_s_fmt_vid_cap,
     .vidioc_enum_framesizes   = dummy_video_enum_framesizes,
+    .vidioc_g_fmt_vid_cap     = dummy_video_g_fmt_vid_cap,
 
 	.vidioc_reqbufs           = vb2_ioctl_reqbufs,
 	.vidioc_create_bufs       = vb2_ioctl_create_bufs,
