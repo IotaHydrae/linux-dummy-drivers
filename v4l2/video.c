@@ -146,6 +146,14 @@ static int dummy_video_start_streaming(struct vb2_queue *vq, unsigned int count)
 static void dummy_video_stop_streaming(struct vb2_queue *vq)
 {
     del_timer(&g_dummy_video->timer);
+
+    while (!list_empty(&g_dummy_video->queued_bufs)) {
+        struct dummy_video_frame_buf *buf;
+
+        buf = list_entry(g_dummy_video->queued_bufs.next, struct dummy_video_frame_buf, list);
+        list_del(&buf->list);
+        vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
+    }
 }
 
 static int dummy_video_querycap(struct file *file, void *fh,
