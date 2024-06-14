@@ -17,6 +17,8 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/timer.h>
+#include <linux/version.h>
 #include <linux/usb.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
@@ -30,21 +32,177 @@ struct dummy_video {
     struct v4l2_device v4l2_dev;
     struct vb2_queue vb_queue;
 
+    spinlock_t queued_bufs_lock;
     struct mutex vb_queue_lock;
     struct mutex v4l2_lock;
+
+    struct list_head queued_bufs;
+
+    struct timer_list timer;
+    int frame_count;
 } *g_dummy_video;
+
+struct dummy_video_frame_buf {
+    struct vb2_v4l2_buffer vb;
+    struct list_head list;
+};
+
+extern unsigned char red[8229];
+extern unsigned char blue[8229];
+extern unsigned char green[8228];
+
+static struct dummy_video_frame_buf *dummy_video_get_next_buf(void)
+{
+	unsigned long flags;
+	struct dummy_video_frame_buf *buf = NULL;
+
+	spin_lock_irqsave(&g_dummy_video->queued_bufs_lock, flags);
+	if (list_empty(&g_dummy_video->queued_bufs))
+		goto leave;
+
+	buf = list_entry(g_dummy_video->queued_bufs.next,
+			struct dummy_video_frame_buf, list);
+	list_del(&buf->list);
+leave:
+	spin_unlock_irqrestore(&g_dummy_video->queued_bufs_lock, flags);
+	return buf;
+}
+
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 9, 191)
+static void dummy_video_timer_func(struct timer_list *tl)
+#else
+static void dummy_video_timer_func(unsigned long data)
+#endif
+{
+    void *ptr;
+    /* get first free buffer */
+    struct dummy_video_frame_buf *buf = dummy_video_get_next_buf();
+
+    /* write into buffer */
+    if (buf) {
+        ptr = vb2_plane_vaddr(&buf->vb.vb2_buf, 0);
+        if (g_dummy_video->frame_count <= 60) {
+            memcpy(ptr, red, sizeof(red));
+            vb2_set_plane_payload(&buf->vb.vb2_buf, 0, sizeof(red));
+        } else if (g_dummy_video->frame_count > 60 && g_dummy_video->frame_count <= 120) {
+            memcpy(ptr, blue, sizeof(blue));
+            vb2_set_plane_payload(&buf->vb.vb2_buf, 0, sizeof(blue));
+        } else {
+            memcpy(ptr, green, sizeof(green));
+            vb2_set_plane_payload(&buf->vb.vb2_buf, 0, sizeof(green));
+        }
+    }
+
+    g_dummy_video->frame_count++;
+    if (g_dummy_video->frame_count > 180)
+        g_dummy_video->frame_count = 0;
+
+    /* call vb2_buffer_done */
+    vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_DONE);
+
+    /* reset timer expire time */
+    mod_timer(&g_dummy_video->timer, jiffies + HZ / 30);
+}
 
 /* Videobuf2 operations */
 static int dummy_video_queue_setup(struct vb2_queue *vq,
 		unsigned int *nbuffers,
 		unsigned int *nplanes, unsigned int sizes[], struct device *alloc_devs[])
 {
+	/* Need at least 8 buffers */
+	if (vq->num_buffers + *nbuffers < 8)
+		*nbuffers = 8 - vq->num_buffers;
+	*nplanes = 1;
+	sizes[0] = PAGE_ALIGN(800*600*2);
+
 	return 0;
 }
 
 static void dummy_video_buf_queue(struct vb2_buffer *vb)
 {
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
+	struct dummy_video_frame_buf *buf =
+			container_of(vbuf, struct dummy_video_frame_buf, vb);
+	unsigned long flags;
 
+	spin_lock_irqsave(&g_dummy_video->queued_bufs_lock, flags);
+	list_add_tail(&buf->list, &g_dummy_video->queued_bufs);
+	spin_unlock_irqrestore(&g_dummy_video->queued_bufs_lock, flags);
+}
+
+static int dummy_video_start_streaming(struct vb2_queue *vq, unsigned int count)
+{
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 9, 191)
+    timer_setup(&g_dummy_video->timer, dummy_video_timer_func, 0);
+    g_dummy_video->timer.expires = jiffies + HZ / 30;
+    add_timer(&g_dummy_video->timer);
+#else
+    setup_timer(&g_dummy_video->timer, dummy_video_timer_func, 0);
+#endif
+    return 0;
+}
+
+static void dummy_video_stop_streaming(struct vb2_queue *vq)
+{
+    del_timer(&g_dummy_video->timer);
+}
+
+static int dummy_video_querycap(struct file *file, void *fh,
+		struct v4l2_capability *cap)
+{
+	strlcpy(cap->driver, KBUILD_MODNAME, sizeof(cap->driver));
+	strlcpy(cap->card, g_dummy_video->vdev.name, sizeof(cap->card));
+	cap->device_caps = g_dummy_video->vdev.device_caps;
+	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
+
+	return 0;
+}
+
+static int dummy_video_enum_fmt_vid_cap(struct file *file, void *priv,
+		struct v4l2_fmtdesc *f)
+{
+	if (f->index > 0)
+		return -EINVAL;
+
+	strlcpy(f->description, "motion jpeg", sizeof(f->description));
+	f->pixelformat = V4L2_PIX_FMT_MJPEG;
+
+	return 0;
+}
+
+static int dummy_video_s_fmt_vid_cap(struct file *file, void *priv,
+		struct v4l2_format *f)
+{
+    printk("%s\n", __func__);
+    if (f->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
+        printk("%s, unsupported buffer type!\n", __func__);
+        return -EINVAL;
+    }
+
+    if (f->fmt.pix.pixelformat != V4L2_PIX_FMT_MJPEG) {
+        printk("%s, unsupported pixel format!\n", __func__);
+        return -EINVAL;
+    }
+
+    f->fmt.pix.width = 800;
+    f->fmt.pix.height = 600;
+    f->fmt.pix.field = V4L2_FIELD_ANY;
+
+	return 0;
+}
+
+static int dummy_video_enum_framesizes(struct file *file, void *fh,
+                    struct v4l2_frmsizeenum *fsize)
+{
+    printk("%s\n", __func__);
+
+	if (fsize->index > 0)
+		return -EINVAL;
+
+	fsize->type = V4L2_FRMSIZE_TYPE_DISCRETE;
+	fsize->discrete.width = 800;
+	fsize->discrete.height = 600;
+	return 0;
 }
 
 // /*
@@ -61,19 +219,18 @@ static void dummy_video_buf_queue(struct vb2_buffer *vb)
 static const struct vb2_ops dummy_video_vb2_ops = {
 	.queue_setup            = dummy_video_queue_setup,
 	.buf_queue              = dummy_video_buf_queue,
-	// .start_streaming        = airspy_start_streaming,
-	// .stop_streaming         = airspy_stop_streaming,
+	.start_streaming        = dummy_video_start_streaming,
+	.stop_streaming         = dummy_video_stop_streaming,
 	.wait_prepare           = vb2_ops_wait_prepare,
 	.wait_finish            = vb2_ops_wait_finish,
 };
 
 static const struct v4l2_ioctl_ops dummy_video_ioctl_ops =  {
-	// .vidioc_querycap          = airspy_querycap,
+	.vidioc_querycap          = dummy_video_querycap,
 
-	// .vidioc_enum_fmt_sdr_cap  = airspy_enum_fmt_sdr_cap,
-	// .vidioc_g_fmt_sdr_cap     = airspy_g_fmt_sdr_cap,
-	// .vidioc_s_fmt_sdr_cap     = airspy_s_fmt_sdr_cap,
-	// .vidioc_try_fmt_sdr_cap   = airspy_try_fmt_sdr_cap,
+	.vidioc_enum_fmt_vid_cap  = dummy_video_enum_fmt_vid_cap,
+	.vidioc_s_fmt_vid_cap     = dummy_video_s_fmt_vid_cap,
+    .vidioc_enum_framesizes   = dummy_video_enum_framesizes,
 
 	.vidioc_reqbufs           = vb2_ioctl_reqbufs,
 	.vidioc_create_bufs       = vb2_ioctl_create_bufs,
@@ -84,13 +241,6 @@ static const struct v4l2_ioctl_ops dummy_video_ioctl_ops =  {
 
 	.vidioc_streamon          = vb2_ioctl_streamon,
 	.vidioc_streamoff         = vb2_ioctl_streamoff,
-
-	// .vidioc_g_tuner           = airspy_g_tuner,
-	// .vidioc_s_tuner           = airspy_s_tuner,
-
-	// .vidioc_g_frequency       = airspy_g_frequency,
-	// .vidioc_s_frequency       = airspy_s_frequency,
-	// .vidioc_enum_freq_bands   = airspy_enum_freq_bands,
 
 	.vidioc_subscribe_event   = v4l2_ctrl_subscribe_event,
 	.vidioc_unsubscribe_event = v4l2_event_unsubscribe,
@@ -114,7 +264,7 @@ struct video_device dummy_video_template = {
     .ioctl_ops                = &dummy_video_ioctl_ops,
 
     /* the device_caps field MUST be set for all but subdevs */
-    .device_caps              = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING,
+    .device_caps              = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING | V4L2_CAP_READWRITE,
 };
 
 static void dummy_video_release(struct v4l2_device *v)
@@ -138,14 +288,20 @@ static __init int dummy_video_drv_init(void)
         return -ENOMEM;
     }
 
+    mutex_init(&g_dummy_video->vb_queue_lock);
+    mutex_init(&g_dummy_video->v4l2_lock);
+    spin_lock_init(&g_dummy_video->queued_bufs_lock);
+    INIT_LIST_HEAD(&g_dummy_video->queued_bufs);
+
     g_dummy_video->vdev = dummy_video_template;
+    printk("%s, video device name : %s\n", __func__, g_dummy_video->vdev.name);
 
     /* Setup vb queue */
     printk("%s, initializing vb2 queue...\n", __func__);
     g_dummy_video->vb_queue.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     g_dummy_video->vb_queue.io_modes = VB2_MMAP | VB2_USERPTR | VB2_READ;
-    // g_dummy_video->vb_queue.drv_priv = NULL;
-    // g_dummy_video->vb_queue.buf_struct_size = sizeof(struct vb2_buffer);
+    g_dummy_video->vb_queue.drv_priv = NULL;
+    g_dummy_video->vb_queue.buf_struct_size = sizeof(struct dummy_video_frame_buf);
     g_dummy_video->vb_queue.ops = &dummy_video_vb2_ops;
     g_dummy_video->vb_queue.mem_ops = &vb2_vmalloc_memops;
     g_dummy_video->vb_queue.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
@@ -162,6 +318,7 @@ static __init int dummy_video_drv_init(void)
     /* If dev == NULL, then name must be filled in by the caller */
     snprintf(g_dummy_video->v4l2_dev.name, sizeof(g_dummy_video->v4l2_dev.name), "%s %s",
 			KBUILD_MODNAME, KBUILD_BASENAME);
+    printk("%s, v4l2 device name : %s\n", __func__, g_dummy_video->v4l2_dev.name);
     g_dummy_video->v4l2_dev.release = dummy_video_release;
     ret = v4l2_device_register(NULL, &g_dummy_video->v4l2_dev);
     if (ret) {
@@ -172,7 +329,11 @@ static __init int dummy_video_drv_init(void)
     g_dummy_video->vdev.lock = &g_dummy_video->v4l2_lock;
 
     printk("%s, registering video device...\n", __func__);
-    ret = video_register_device(&g_dummy_video->vdev, VFL_TYPE_SDR, -1);
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 9, 191)
+    ret = video_register_device(&g_dummy_video->vdev, VFL_TYPE_VIDEO, -1);
+#else
+    ret = video_register_device(&g_dummy_video->vdev, VFL_TYPE_GRABBER, -1);
+#endif
     if (ret) {
         printk("failed to register video device!\n");
         goto err_free_v4l2_dev;
@@ -193,7 +354,7 @@ static __exit void dummy_video_drv_exit(void)
 
     printk("%s, unregistering things...\n", __func__);
     v4l2_device_unregister(&g_dummy_video->v4l2_dev);
-    vb2_video_unregister_device(&g_dummy_video->vdev);
+    video_unregister_device(&g_dummy_video->vdev);
 
     printk("%s, free dummy video instance...\n", __func__);
     if (g_dummy_video) {

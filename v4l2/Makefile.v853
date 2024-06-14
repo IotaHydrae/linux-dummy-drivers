@@ -1,0 +1,21 @@
+
+# local kernel build dir
+# KERN_DIR:=/lib/modules/$(shell uname -r)/build
+
+# users kernel dir
+KERN_DIR:=/home/$(USER)/allwinner/tina-v853-open/kernel/linux-4.9
+ARCH:=arm
+CROSS_COMPILE:=/home/$(USER)/allwinner/tina-v853-open/out/toolchain/gcc-linaro-5.3.1-2016.05-x86_64_arm-linux-gnueabi/bin/arm-linux-gnueabi-
+
+all:
+	bear -- make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KERN_DIR) M=`pwd` modules
+
+clean:
+	bear -- make ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KERN_DIR) M=`pwd` modules clean
+
+obj-m+=dummy-video.o
+
+dummy-video-y += video.o
+dummy-video-y += red.o
+dummy-video-y += green.o
+dummy-video-y += blue.o

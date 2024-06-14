@@ -12,3 +12,8 @@ clean:
 	bear -- make -C $(KERN_DIR) M=`pwd` modules clean
 
 obj-m+=dummy-video.o
+
+dummy-video-y += video.o
+dummy-video-y += red.o
+dummy-video-y += green.o
+dummy-video-y += blue.o
