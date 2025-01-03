@@ -20,8 +20,10 @@ struct dummy_fb {
     struct device *dev;
 
     struct fb_deferred_io *fbdefio;
-    struct fb_info *fbinfo;
+    struct fb_info *info;
     struct fb_ops *fbops;
+
+    u32             pseudo_palette[16];
 };
 
 struct dummy_display {
@@ -41,11 +43,16 @@ static const struct dummy_display display = {
     .fps = 24,
 };
 
+static void dummy_fb_deferred_io(struct fb_info *info, struct list_head *pagelist)
+{
+    pr_info("%s\n", __func__);
+}
+
 static int dummy_fb_alloc(struct dummy_fb *dfb)
 {
     struct fb_deferred_io *fbdefio;
     struct fb_ops *fbops;
-    struct fb_info *fbinfo;
+    struct fb_info *info;
     int width, height, bpp, rotate;
     u8 *vmem = NULL;
     int vmem_size;
@@ -78,16 +85,68 @@ static int dummy_fb_alloc(struct dummy_fb *dfb)
         goto err_free_fbops;
     }
 
-    fbinfo = framebuffer_alloc(0, dfb->dev);
-    if (!fbinfo) {
-        pr_err("failed to allocate fbinfo\n");
+    info = framebuffer_alloc(0, dfb->dev);
+    if (!info) {
+        pr_err("failed to allocate info\n");
         goto err_free_fbdefio;
     }
 
     fbops->owner = THIS_MODULE;
-    fbinfo->screen_buffer = vmem;
-    fbinfo->fbops = fbops;
-    fbinfo->fbdefio = fbdefio;
+    info->screen_buffer = vmem;
+    info->fbops = fbops;
+    info->fbdefio = fbdefio;
+
+    fbops->owner = THIS_MODULE;
+    fbops->fb_read = fb_sys_read;
+    fbops->fb_write = fb_sys_write;
+    fbops->fb_fillrect = cfb_fillrect;
+    fbops->fb_copyarea = cfb_copyarea;
+    fbops->fb_imageblit = cfb_imageblit;
+
+    snprintf(info->fix.id, sizeof(info->fix.id), "%s", DRV_NAME);
+    info->fix.type = FB_TYPE_PACKED_PIXELS;
+    info->fix.visual = FB_VISUAL_TRUECOLOR;
+    info->fix.xpanstep = 0;
+    info->fix.ypanstep = 0;
+    info->fix.ywrapstep = 0;
+    info->fix.line_length = width * bpp / BITS_PER_BYTE;
+    info->fix.accel = FB_ACCEL_NONE;
+    info->fix.smem_len = vmem_size;
+
+    info->var.rotate = rotate;
+    info->var.xres = width;
+    info->var.yres = height;
+    info->var.xres_virtual = width;
+    info->var.yres_virtual = height;
+    info->var.bits_per_pixel =  bpp;
+    info->var.nonstd = 1;
+    info->var.grayscale = 0;
+
+    info->var.red.offset = 11;
+    info->var.red.length = 5;
+    info->var.green.offset = 5;
+    info->var.green.length = 6;
+    info->var.blue.offset = 0;
+    info->var.blue.length = 5;
+    info->var.transp.offset = 0;
+    info->var.transp.length =  0;
+
+    info->flags = FBINFO_FLAG_DEFAULT | FBINFO_VIRTFB;
+
+    fbdefio->delay = HZ;
+    // fbdefio->sort_pagereflist = true;
+    fbdefio->deferred_io = dummy_fb_deferred_io;
+    fb_deferred_io_init(info);
+
+    info->pseudo_palette = &dfb->pseudo_palette;
+
+    rc = register_framebuffer(info);
+    if (rc < 0) {
+        pr_err("framebuffer register failed with %d!", rc);
+        return -1;
+    }
+
+    printk("%d KB video memory\n", info->fix.smem_len >> 10);
 
     return 0;
 
@@ -110,7 +169,7 @@ static int __init dummy_fb_init(void)
         return -ENOMEM;
     };
 
-    dfb->class = class_create(DRV_NAME "class");
+    dfb->class = class_create(THIS_MODULE, DRV_NAME "class");
     if (IS_ERR(dfb->class)) {
         pr_err("failed to create class\n");
         goto err_free_dfb;
@@ -142,9 +201,9 @@ static void __exit dummy_fb_exit(void)
     if (dfb->class)
         class_destroy(dfb->class);
 
-    if (dfb->fbinfo) {
-        fb_deferred_io_cleanup(dfb->fbinfo);
-        framebuffer_release(dfb->fbinfo);
+    if (dfb->info) {
+        fb_deferred_io_cleanup(dfb->info);
+        framebuffer_release(dfb->info);
     }
 
     kfree(dfb);
