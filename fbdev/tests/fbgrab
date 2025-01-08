@@ -1,0 +1,117 @@
+#!/bin/sh
+
+# Copyright © 2009-2023 Jakub Wilk
+# Copyright © 2017 Kaelin Laundry
+#
+# This package is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 dated June, 1991.
+
+set -e
+
+usage()
+{
+  cat <<EOF
+Usage: ${0##*/} [option...] <filename.png|->
+EOF
+[ "${1-}" = short ] && return
+cat <<EOF
+Options:
+-c <N>      grab from /dev/ttyN
+-C <N>      grab from /dev/ttyN, for slower devices
+-d <dev>    use framebuffer device <dev>
+-i          turn on PNG interlacing
+-s <N>      sleep <N> seconds before making screenshot
+-?          show this help message and exit
+
+If the specified destination is "-", the PNG output is piped to stdout.
+EOF
+}
+
+not_supported_option()
+{
+  printf -- 'fbgrab: the %s option is not supported.\n' "$1" >&2
+  exit 3
+}
+
+no_ppm2png()
+{
+  printf -- 'fbgrab: no PPM -> PNG conversion tool found.\nPlease install Netpbm or GraphicsMagick, or ImageMagick.\n' >&2
+  exit 4
+}
+
+current_vt=''
+grab_vt=''
+wait_after_switch=0
+wait_before_switch=0
+device=${FRAMEBUFFER:-/dev/fb0}
+interlace=''
+while getopts 'b:c:C:d:f:h:is:w:?' arg
+do
+  case "$arg" in
+    b) not_supported_option -b;;
+    c) grab_vt="$OPTARG"; wait_after_switch=0;;
+    C) grab_vt="$OPTARG"; wait_after_switch=3;;
+    d) device="$OPTARG";;
+    f) not_supported_option -f;;
+    h) not_supported_option -h;;
+    i) interlace=1;;
+    s) wait_before_switch="$((OPTARG))";;
+    w) not_supported_option "$OPTARG";;
+    [?])
+      if [ -n "${OPTARG+x}" ]
+      then
+        usage
+        exit 0
+      else
+        usage short >&2
+        exit 1
+      fi
+  esac
+done
+
+shift $((OPTIND - 1))
+
+if [ $# -ne 1 ]
+then
+  usage short >&2
+  exit 1
+fi
+
+if command -v pnmtopng >/dev/null 2>/dev/null
+then
+  ppm2png()
+  {
+    [ "$1" = "-" ] || exec > "$1"
+    pnmtopng ${interlace:+-interlace} -
+  }
+elif gm -version 2>/dev/null | grep -q -w GraphicsMagick
+then
+  ppm2png()
+  {
+    gm convert ${interlace:+-interlace Line} PPM:- "PNG:$1"
+  }
+elif convert -version 2>/dev/null | grep -q -w ImageMagick
+then
+  ppm2png()
+  {
+    convert ${interlace:+-interlace Line} PPM:- "PNG:$1"
+  }
+else
+  no_ppm2png
+fi
+
+sleep "$wait_before_switch"
+if [ -n "$grab_vt" ]
+then
+  current_vt=$(fgconsole)
+  chvt "$grab_vt"
+fi
+sleep "$wait_after_switch"
+fbcat "$device" | ppm2png "$1"
+if [ -n "$current_vt" ]
+then
+  chvt "$current_vt"
+fi
+
+# vim:ts=2 sts=2 sw=2 et

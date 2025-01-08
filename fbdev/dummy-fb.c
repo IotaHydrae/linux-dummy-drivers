@@ -26,6 +26,13 @@ struct dummy_fb {
     u32             pseudo_palette[16];
 };
 
+struct dirty_area {
+    u32 x1;
+    u32 y1;
+    u32 x2;
+    u32 y2;
+};
+
 struct dummy_display {
     u32     xres;
     u32     yres;
@@ -53,8 +60,11 @@ static ssize_t dummy_fb_read(struct fb_info *info, char __user *buf,
 static ssize_t dummy_fb_write(struct fb_info *info, const char __user *buf,
 			    size_t count, loff_t *ppos)
 {
+    ssize_t ret = 0;
     pr_info("%s: count=%zd, ppos=%llu\n", __func__,  count, *ppos);
-    return fb_sys_write(info, buf, count, ppos);
+    ret = fb_sys_write(info, buf, count, ppos);
+    schedule_delayed_work(&info->deferred_work, info->fbdefio->delay);
+    return ret;
 }
 
 static void dummy_fb_fillrect(struct fb_info *info, const struct fb_fillrect *rect)
@@ -90,14 +100,11 @@ static int dummy_fb_setcolreg(unsigned int regno, unsigned int red,
     unsigned int val;
     int ret = 1;
 
-    printk("%s(regno=%u, red=0x%X, green=0x%X, blue=0x%X, trans=0x%X)\n",
+    pr_info("%s(regno=%u, red=0x%X, green=0x%X, blue=0x%X, trans=0x%X)\n",
            __func__, regno, red, green, blue, transp);
 
     if (regno >= 256)   /* no. of hw registers */
         return 1;
-    /*
-    * Program hardware... do anything you want with transp
-    */
 
     switch (info->fix.visual) {
     case FB_VISUAL_TRUECOLOR:
@@ -124,7 +131,7 @@ static int dummy_fb_blank(int blank, struct fb_info *info)
     case FB_BLANK_VSYNC_SUSPEND:
     case FB_BLANK_HSYNC_SUSPEND:
     case FB_BLANK_NORMAL:
-        pr_info("%s, normal\n", __func__);
+        pr_info("%s, blank\n", __func__);
         break;
     case FB_BLANK_UNBLANK:
         pr_info("%s, unblank\n", __func__);
@@ -133,9 +140,30 @@ static int dummy_fb_blank(int blank, struct fb_info *info)
     return ret;
 }
 
-static void dummy_fb_deferred_io(struct fb_info *info, struct list_head *pagelist)
+static void dummy_fb_deferred_io(struct fb_info *info, struct list_head *pagereflist)
 {
-    pr_info("%s\n", __func__);
+    struct fb_deferred_io_pageref *pageref;
+    struct dirty_area area = {0};
+    uint y_cur, y_end;
+
+    area.y1 = info->var.yres - 1;
+
+    list_for_each_entry(pageref, pagereflist, list) {
+        y_cur = pageref->offset / info->fix.line_length;
+        y_end = (pageref->offset + PAGE_SIZE) / info->fix.line_length;
+
+        if (y_end > info->var.yres - 1)
+            y_end = info->var.yres - 1;
+        if (y_cur < area.y1)
+            area.y1 = y_cur;
+        if (y_end > area.y2)
+            area.y2 = y_end;
+    }
+
+    if (y_end > 1)
+        area.x2 = info->var.xres - 1;
+
+    pr_info("%s, dirty area: (%d, %d, %d, %d)\n", __func__, area.x1, area.y1, area.x2, area.y2);
 }
 
 static int dummy_fb_alloc(struct dummy_fb *dfb)
@@ -208,8 +236,8 @@ static int dummy_fb_alloc(struct dummy_fb *dfb)
     info->var.rotate         = rotate;
     info->var.xres           = width;
     info->var.yres           = height;
-    info->var.xres_virtual   = width;
-    info->var.yres_virtual   = height;
+    info->var.xres_virtual   = info->var.xres;
+    info->var.yres_virtual   = info->var.yres;
     info->var.bits_per_pixel = bpp;
     info->var.nonstd         = 1;
     info->var.grayscale      = 0;
@@ -226,8 +254,8 @@ static int dummy_fb_alloc(struct dummy_fb *dfb)
     info->flags = FBINFO_FLAG_DEFAULT | FBINFO_VIRTFB;
     info->pseudo_palette = &dfb->pseudo_palette;
 
-    fbdefio->delay = HZ;
-    // fbdefio->sort_pagereflist = true;
+    fbdefio->delay = HZ / display.fps;
+    fbdefio->sort_pagereflist = true;
     fbdefio->deferred_io = dummy_fb_deferred_io;
     fb_deferred_io_init(info);
 
@@ -295,6 +323,7 @@ static void __exit dummy_fb_exit(void)
     if (dfb->info) {
         fb_deferred_io_cleanup(dfb->info);
         unregister_framebuffer(dfb->info);
+        vfree(dfb->info->screen_buffer);
         framebuffer_release(dfb->info);
     }
 
