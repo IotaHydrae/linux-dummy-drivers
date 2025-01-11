@@ -27,3 +27,4 @@ dump:
 	sudo ./tests/fbgrab -d /dev/fb1 output.png
 
 obj-m += $(MODULE_NAME).o
+$(MODULE_NAME)-y += drm.o dma_gem_dma_helper.o
