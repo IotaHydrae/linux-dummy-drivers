@@ -210,6 +210,16 @@ static int dummy_drm_dev_init_with_formats(struct dummy_drm_dev *ddrm,
         return rc;
     }
 
+    drm_plane_enable_fb_damage_clips(&ddrm->pipe.plane);
+
+    drm->mode_config.funcs = &dummy_drm_mode_config_funcs;
+    drm->mode_config.min_width = ddrm->mode.hdisplay;
+    drm->mode_config.max_width = ddrm->mode.hdisplay;
+    drm->mode_config.min_height = ddrm->mode.vdisplay;
+    drm->mode_config.max_height = ddrm->mode.vdisplay;
+
+    DRM_DEBUG_KMS("mode: %ux%u", ddrm->mode.hdisplay, ddrm->mode.vdisplay);
+
     return 0;
 }
 
@@ -223,7 +233,8 @@ static int dummy_drm_dev_init(struct dummy_drm_dev *ddrm,
 
     pr_info("%s\n", __func__);
 
-    return dummy_drm_dev_init_with_formats(ddrm, funcs, NULL, 0, mode, bufsize);
+    return dummy_drm_dev_init_with_formats(ddrm, funcs, dummy_drm_formats,
+                        ARRAY_SIZE(dummy_drm_formats), mode, bufsize);
 }
 
 static int __init dummy_drm_init(void)
@@ -259,13 +270,24 @@ static int __init dummy_drm_init(void)
         goto err_free_dev;
     }
     drm = &ddrm->drm;
-    dev_set_drvdata(ddev->dev, drm);
 
     rc = dummy_drm_dev_init(ddrm, &dummy_display_pipe_funcs, &dummy_disp_mode);
     if (rc) {
         pr_err("failed to init drm dev\n");
         goto err_free_drm;
     }
+
+    drm_mode_config_reset(drm);
+
+    rc = drm_dev_register(drm, 0);
+    if (rc) {
+        pr_err("failed to register drm dev\n");
+        goto err_free_drm;
+    };
+
+    dev_set_drvdata(ddev->dev, drm);
+
+    //drm_fbdev_generic_setup(drm, 0);
 
     return 0;
 
@@ -291,8 +313,10 @@ static void __exit dummy_drm_exit(void)
     if (ddev->class)
         class_destroy(ddev->class);
 
-    if (drm)
-        drm_dev_put(drm);
+    if (drm) {
+        drm_dev_unplug(drm);
+        drm_atomic_helper_shutdown(drm);
+    }
 
     kfree(ddev);
 }
