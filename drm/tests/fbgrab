@@ -108,7 +108,7 @@ then
   chvt "$grab_vt"
 fi
 sleep "$wait_after_switch"
-fbcat "$device" | ppm2png "$1"
+./fbcat "$device" | ppm2png "$1"
 if [ -n "$current_vt" ]
 then
   chvt "$current_vt"

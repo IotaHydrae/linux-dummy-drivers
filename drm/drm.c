@@ -19,6 +19,7 @@
 #include <drm/drm_fbdev_generic.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_atomic_helper.h>
+#include <drm/drm_damage_helper.h>
 #include <drm/drm_gem_dma_helper.h>
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/drm_gem_atomic_helper.h>
@@ -83,7 +84,12 @@ static void dummy_drm_pipe_disable(struct drm_simple_display_pipe *pipe)
 static void dummy_drm_pipe_update(struct drm_simple_display_pipe *pipe,
                                 struct drm_plane_state *old_state)
 {
+    struct drm_plane_state *state = pipe->plane.state;
+    struct drm_rect rect;
+
     pr_info("%s\n", __func__);
+    if (drm_atomic_helper_damage_merged(old_state, state, &rect))
+        pr_info("x1: %u, y1: %u, x2: %u, y2: %u\n", rect.x1, rect.y1, rect.x2, rect.y2);
 }
 
 static int dummy_drm_pipe_begin_fb_access(struct drm_simple_display_pipe *pipe,
@@ -263,6 +269,10 @@ static int __init dummy_drm_init(void)
         goto err_free_class;
     }
 
+    u64 dma_mask = DMA_BIT_MASK(32);
+    ddev->dev->dma_mask = &dma_mask;
+    ddev->dev->coherent_dma_mask = dma_mask;
+
     ddrm = devm_drm_dev_alloc(ddev->dev, &dummy_drm_driver,
                     struct dummy_drm_dev, drm);
     if (IS_ERR(ddrm)) {
@@ -287,7 +297,7 @@ static int __init dummy_drm_init(void)
 
     dev_set_drvdata(ddev->dev, drm);
 
-    //drm_fbdev_generic_setup(drm, 0);
+    drm_fbdev_generic_setup(drm, 0);
 
     return 0;
 
