@@ -9,7 +9,26 @@ make
 sudo insmod dummy-drm.ko
 ```
 
-You will see driver printing dirty area to dmesg from drm_pipe_update function.
+Log of driver initialization:
+
+```bash
+               dummy_drm_init
+[  581.309713] dummy-drm: dummy_drm_dev_init
+[  581.309714] dummy-drm: dummy_drm_dev_init_with_formats
+[  581.309721] dummy-drm: mode: 480x320
+[  581.309831] [drm] Initialized dummy-drm 1.0.0 20250111 for dummy-drmdev on minor 0
+[  581.309839] dummy-drm: dummy_drm_pipe_mode_valid
+[  581.310237] dummy-drm: dummy_drm_pipe_mode_valid
+[  581.310242] dummy-drm: dummy_drm_pipe_update
+[  581.310242] dummy-drm: x1: 0, y1: 0, x2: 480, y2: 320
+[  581.310243] dummy-drm: dummy_drm_pipe_enable
+[  581.310257] Console: switching to colour frame buffer device 60x40
+[  581.310265] dummy-drm: dummy_drm_pipe_update
+[  581.310265] dummy-drm: x1: 0, y1: 0, x2: 480, y2: 320
+[  581.310312] dummy-drmclass dummy-drmdev: [drm] fb0: dummy-drmdrmfb frame buffer device
+```
+
+You will see driver printing dirty area info to dmesg from drm_pipe_update function.
 
 ```bash
 [ 1165.018451] dummy-drm: dummy_drm_pipe_update
