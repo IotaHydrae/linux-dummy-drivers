@@ -37,6 +37,11 @@ You will see driver printing dirty area info to dmesg from drm_pipe_update funct
 
 ## Test
 
+Install prerequisites:
+```bash
+sudo apt install netpbm -y
+```
+
 Use command below to dump the framebuffer, assume /dev/fb0 is used.
 ```bash
 make dump
@@ -46,4 +51,4 @@ You will see a dump file named "dump.png" in current directory.
 
 On my WSL machine, it looks like this:
 
-![dump](./dump.png)
+![dump](./assets/screenshot.png)

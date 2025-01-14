@@ -16,6 +16,7 @@
 #include <drm/drm_drv.h>
 #include <drm/drm_device.h>
 #include <drm/drm_managed.h>
+#include <drm/drm_framebuffer.h>
 #include <drm/drm_fbdev_generic.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_atomic_helper.h>
@@ -85,11 +86,25 @@ static void dummy_drm_pipe_update(struct drm_simple_display_pipe *pipe,
                                 struct drm_plane_state *old_state)
 {
     struct drm_plane_state *state = pipe->plane.state;
+    struct drm_shadow_plane_state *shadow_plane_state = to_drm_shadow_plane_state(state);
+    struct drm_framebuffer *fb = state->fb;
     struct drm_rect rect;
+    int idx;
+
+    if (!pipe->crtc.state->active)
+        return;
+
+    if (WARN_ON(!fb))
+        return;
+
+    if (!drm_dev_enter(fb->dev, &idx))
+        return;
 
     pr_info("%s\n", __func__);
     if (drm_atomic_helper_damage_merged(old_state, state, &rect))
         pr_info("x1: %u, y1: %u, x2: %u, y2: %u\n", rect.x1, rect.y1, rect.x2, rect.y2);
+
+    drm_dev_exit(idx);
 }
 
 static int dummy_drm_pipe_begin_fb_access(struct drm_simple_display_pipe *pipe,
