@@ -27,7 +27,7 @@ test: all
 	sudo insmod $(MODULE_NAME).ko || true
 
 dump: fbcat
-	cd tests && sudo ./fbgrab -d /dev/fb0 ../dump.png
+	cd tests && sudo ./fbgrab -d /dev/fb1 ../dump.png
 
 obj-m += $(MODULE_NAME).o
 $(MODULE_NAME)-y += drm.o dma_gem_dma_helper.o

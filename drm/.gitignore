@@ -1,3 +1,4 @@
 tests/fb_rectangle
 tests/fb_str
 tests/fbcat
+*.png

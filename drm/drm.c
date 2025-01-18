@@ -29,6 +29,7 @@
 #define DRV_NAME "dummy-drm"
 
 struct dummy_device {
+    u64 dma_mask;
     struct class *class;
     struct device *dev;
 };
@@ -66,8 +67,10 @@ static enum drm_mode_status dummy_drm_pipe_mode_valid(struct drm_simple_display_
 					      const struct drm_display_mode *mode)
 {
     struct dummy_drm_dev *ddrm = drm_to_dummy_drm_dev(pipe->crtc.dev);
-    pr_info("%s\n", __func__);
-    return drm_crtc_helper_mode_valid_fixed(&pipe->crtc, mode, &ddrm->mode);
+    int rc;
+    rc = drm_crtc_helper_mode_valid_fixed(&pipe->crtc, mode, &ddrm->mode);
+    pr_info("%s, rc: %d\n", __func__, rc);
+    return rc;
 }
 
 static void dummy_drm_pipe_enable(struct drm_simple_display_pipe *pipe,
@@ -178,7 +181,7 @@ static const uint32_t dummy_drm_formats[] = {
 };
 
 static const struct drm_display_mode dummy_disp_mode = {
-    DRM_SIMPLE_MODE(480, 320, 85, 55),
+    DRM_MODE_INIT(60, 480, 320, 85, 55),
 };
 
 DEFINE_DRM_GEM_DMA_FOPS(dummy_drm_fops);
@@ -284,9 +287,9 @@ static int __init dummy_drm_init(void)
         goto err_free_class;
     }
 
-    u64 dma_mask = DMA_BIT_MASK(32);
-    ddev->dev->dma_mask = &dma_mask;
-    ddev->dev->coherent_dma_mask = dma_mask;
+    ddev->dma_mask = DMA_BIT_MASK(32);
+    ddev->dev->dma_mask = &ddev->dma_mask;
+    ddev->dev->coherent_dma_mask = ddev->dma_mask;
 
     ddrm = devm_drm_dev_alloc(ddev->dev, &dummy_drm_driver,
                     struct dummy_drm_dev, drm);
