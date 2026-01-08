@@ -17,7 +17,7 @@ fb_str: tests/fb_str.c
 	$(CC) -o tests/$@ $^
 
 clean:
-	make -C $(KERN_DIR) M=`pwd` modules clean
+	make -C $(KERN_DIR) M=`pwd` clean
 
 test: all
 	sudo rmmod $(MODULE_NAME).ko || true

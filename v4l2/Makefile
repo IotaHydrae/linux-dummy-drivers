@@ -9,7 +9,7 @@ all:
 	bear -- make -C $(KERN_DIR) M=`pwd` modules
 
 clean:
-	bear -- make -C $(KERN_DIR) M=`pwd` modules clean
+	bear -- make -C $(KERN_DIR) M=`pwd` clean
 
 obj-m+=dummy-video.o
 
