@@ -2,6 +2,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/cdev.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
 
@@ -9,16 +10,15 @@
 #define DRV_NAME "dummy_i2c"
 
 struct dummy_i2c {
+	dev_t dev_num;
+
 	struct device *dev;
 	struct class *class;
 
 	struct i2c_adapter adapter;
 };
 
-static struct dummy_i2c dummy_i2c = {
-	.class = NULL,
-	.dev = NULL,
-};
+static struct dummy_i2c dummy_i2c;
 
 static int dummy_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs,
 			  int num)
@@ -38,20 +38,28 @@ static const struct i2c_algorithm dummy_i2c_algo = {
 
 static int dummy_i2c_register(struct dummy_i2c *i2c)
 {
-	struct class *class = i2c->class;
-	struct device *dev = i2c->dev;
+	struct device *dev;
+	int ret;
 
-	class = class_create(CLASS_NAME);
-	if (IS_ERR(class)) {
-		pr_err("failed to create class\n");
-		return -ENOMEM;
+	ret = alloc_chrdev_region(&i2c->dev_num, 0, 1, DRV_NAME);
+	if (ret) {
+		pr_err("failed to allocate device number\n");
+		return ret;
 	}
 
-	dev = device_create(class, NULL, MKDEV(0, 0), NULL, DRV_NAME);
-	if (IS_ERR(dev)) {
+	i2c->class = class_create(CLASS_NAME);
+	if (IS_ERR(i2c->class)) {
+		pr_err("failed to create class\n");
+		goto err_free_dev_num;
+	}
+
+	i2c->dev =
+		device_create(i2c->class, NULL, i2c->dev_num, NULL, DRV_NAME);
+	if (IS_ERR(i2c->dev)) {
 		pr_err("failed to create device\n");
 		goto err_free_class;
 	}
+	dev = i2c->dev;
 
 	i2c->adapter.owner = THIS_MODULE;
 	i2c->adapter.algo = &dummy_i2c_algo;
@@ -63,28 +71,36 @@ static int dummy_i2c_register(struct dummy_i2c *i2c)
 		 DRV_NAME " bus%d", i2c->adapter.nr);
 
 	i2c_set_adapdata(&i2c->adapter, i2c);
-	dev_set_drvdata(dev, i2c);
+	dev_set_drvdata(i2c->dev, i2c);
 
-	i2c_add_numbered_adapter(&i2c->adapter);
+	ret = i2c_add_numbered_adapter(&i2c->adapter);
+	if (ret) {
+		dev_err(dev, "failed to add adapter\n");
+		goto err_free_dev;
+	}
+
+	dev_info(dev, "adapter i2c-%d ready", i2c->adapter.nr);
 
 	return 0;
 
-// err_free_dev:
-// 	device_destroy(i2c->class, MKDEV(0, 0));
+err_free_dev:
+	i2c_del_adapter(&i2c->adapter);
+	device_destroy(i2c->class, i2c->dev_num);
 err_free_class:
 	class_destroy(i2c->class);
+err_free_dev_num:
+	unregister_chrdev_region(i2c->dev_num, 1);
+
 	return -ENODEV;
 }
 
 static int dummy_i2c_unregister(struct dummy_i2c *i2c)
 {
 	i2c_del_adapter(&i2c->adapter);
+	device_destroy(i2c->class, i2c->dev_num);
+	class_destroy(i2c->class);
+	unregister_chrdev_region(i2c->dev_num, 1);
 
-	if (i2c->dev)
-		device_destroy(i2c->class, MKDEV(0, 0));
-
-	if (i2c->class)
-		class_destroy(i2c->class);
 	return 0;
 }
 
