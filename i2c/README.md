@@ -33,10 +33,24 @@ i2c-0   unknown         dummy_i2c bus0                          N/A
 70: 70 71 72 73 74 75 76 77
 ```
 
+instantiate I2C devices from user-space
+```bash
+echo eeprom | sudo tee /sys/bus/i2c/devices/i2c-0/new_device
+```
+
 ## Log
 
-adapter doesn't have a legal algo function
+adapter doesn't have a legal algo function, `drivers/i2c/i2c-core-base.c +1534`
 
-```bash
+```c
 [27689.769983] i2c-core: adapter 'dummy_i2c bus0': no algo supplied!
+
+/* Sanity checks */
+if (WARN(!adap->name[0], "i2c adapter has no name"))
+     goto out_list;
+
+if (!adap->algo) {
+     pr_err("adapter '%s': no algo supplied!\n", adap->name);
+     goto out_list;
+}
 ```
