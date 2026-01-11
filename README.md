@@ -8,7 +8,7 @@ userspace tools. It is a good starting point if you want to develop an actual ha
 ## System Info
 
 | -              | -                                 |
-| -------------- | --------------------------------- |
+|----------------|-----------------------------------|
 | Distro         | Ubuntu 24.04.3 LTS                |
 | Kernel Version | 6.6.87.2-microsoft-standard-WSL2+ |
 
@@ -19,6 +19,7 @@ userspace tools. It is a good starting point if you want to develop an actual ha
 - [x] drm_simple_pipe
 - [x] i2c adapter
 - [ ] spi master
+- [ ] gpiochip
 - [ ] usb host
 - [ ] sound
 - [ ] dma engine
