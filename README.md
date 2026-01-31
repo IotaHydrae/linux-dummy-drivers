@@ -7,10 +7,10 @@ userspace tools. It is a good starting point if you want to develop an actual ha
 
 ## System Info
 
-| -              | -                                 |
-|----------------|-----------------------------------|
-| Distro         | Ubuntu 24.04.3 LTS                |
-| Kernel Version | 6.6.87.2-microsoft-standard-WSL2+ |
+| -              | -                                  |
+| -------------- | ---------------------------------- |
+| Distro         | Ubuntu 24.04.3 LTS                 |
+| Kernel Version | 6.6.114.1-microsoft-standard-WSL2+ |
 
 ## Development status
 
@@ -18,8 +18,8 @@ userspace tools. It is a good starting point if you want to develop an actual ha
 - [x] legacy framebuffer dev
 - [x] drm_simple_pipe
 - [x] i2c adapter
-- [ ] spi master
-- [ ] gpiochip
+- [x] spi master
+- [x] gpiochip
 - [ ] usb host
 - [ ] sound
 - [ ] dma engine
