@@ -1,0 +1,7 @@
+[package]
+name = "spi-test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+spidev = "0.7.1"

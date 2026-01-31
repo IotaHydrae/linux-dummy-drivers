@@ -59,9 +59,33 @@ static void dummy_spi_hw_init(struct dummy_spi *spi)
 	dummy_spi_set_bus_freq(spi, 1000000);
 }
 
+static int dummy_spi_prepare_message(struct spi_controller *host,
+				     struct spi_message *message)
+{
+	dev_info(&host->dev, "%s\n", __func__);
+	return 0;
+}
+
+static int dummy_spi_transfer_one(struct spi_controller *host,
+				  struct spi_device *spi,
+				  struct spi_transfer *xfer)
+{
+	dev_info(&host->dev, "%s\n", __func__);
+	print_hex_dump(KERN_INFO, "data: ", DUMP_PREFIX_NONE, 16, 1,
+		       xfer->tx_buf, xfer->len, false);
+	return 0;
+}
+
 static int dummy_spi_register(struct dummy_spi *spi)
 {
 	struct spi_controller *host;
+	struct spi_device *spidev;
+	struct spi_board_info info = {
+		.modalias = "spidev",
+		.max_speed_hz = 10000000,
+		.chip_select = 0,
+		.mode = SPI_MODE_0,
+	};
 	struct dummy_spi *dspi;
 	struct device *dev;
 	int ret;
@@ -110,8 +134,12 @@ static int dummy_spi_register(struct dummy_spi *spi)
 
 	host->bus_num = -1;
 	host->mode_bits = SPI_CPOL | SPI_CPHA;
-	host->prepare_message = NULL;
-	host->transfer_one = NULL;
+	host->bits_per_word_mask = SPI_BPW_MASK(8);
+	host->max_speed_hz = 10000000;
+	host->min_speed_hz = 1000;
+	host->num_chipselect = 1;
+	host->prepare_message = dummy_spi_prepare_message;
+	host->transfer_one = dummy_spi_transfer_one;
 	host->auto_runtime_pm = false;
 
 	/* TODO: enable SPI module */
@@ -122,7 +150,15 @@ static int dummy_spi_register(struct dummy_spi *spi)
 		goto exit_free_dev;
 	}
 
-	dev_info(dev, "new adapter - ready");
+	dev_info(dev, "new host <spi-%d> - ready", host->bus_num);
+
+	spidev = spi_new_device(host, &info);
+	if (!spidev) {
+		dev_err(dev, "Failed to create spidev!\n");
+		goto exit_free_dev;
+	}
+
+	dev_info(dev, "spidev created!\n");
 
 	return 0;
 
