@@ -7,10 +7,11 @@ userspace tools. It is a good starting point if you want to develop an actual ha
 
 ## System Info
 
-| -              | -                                  |
-| -------------- | ---------------------------------- |
-| Distro         | Ubuntu 24.04.3 LTS                 |
-| Kernel Version | 6.6.114.1-microsoft-standard-WSL2+ |
+| -              | -                              |
+| -------------- | ------------------------------ |
+| Machine        | Raspberry Pi 5 Model B Rev 1.0 |
+| Distro         | Debian GNU/Linux 13 (trixie)   |
+| Kernel Version | 6.12.62+rpt-rpi-2712           |
 
 ## Development status
 
