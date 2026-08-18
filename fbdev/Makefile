@@ -1,33 +1,44 @@
-
 # local kernel build dir
-KERN_DIR:=/lib/modules/$(shell uname -r)/build
+KERN_DIR ?= /lib/modules/$(shell uname -r)/build
 
 # user defined kernel dir
-# KERN_DIR:=/home/user/linux
+# KERN_DIR ?= ~/sources/WSL2-Linux-Kernel
 
-MODULE_NAME:=dummy-fb
+MODULE_NAME := dummy-fb
 
-all: fb_rectangle fb_str
-	make -C $(KERN_DIR) M=`pwd` modules
+# userspace test tools
+FBDEV  ?= /dev/fb1
+OUT    ?= output.png
+CFLAGS ?= -O2
 
-fb_rectangle: tests/fb_rectangle.c
-	$(CC) -o tests/$@ $^
+.PHONY: all module tests test dump rmmod clean
 
-fb_str: tests/fb_str.c
-	$(CC) -o tests/$@ $^
+all: module tests
+
+module:
+	$(MAKE) -C $(KERN_DIR) M=$(CURDIR) modules
+
+tests: tests/fb_rectangle tests/fb_str
+
+tests/fb_rectangle: tests/fb_rectangle.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+tests/fb_str: tests/fb_str.c
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	make -C $(KERN_DIR) M=`pwd` clean
+	$(MAKE) -C $(KERN_DIR) M=$(CURDIR) clean
+	rm -f tests/fb_rectangle tests/fb_str
 
 test: all
-	sudo rmmod $(MODULE_NAME).ko || true
-	sudo insmod $(MODULE_NAME).ko || true
+	$(MAKE) rmmod
+	sudo insmod $(MODULE_NAME).ko
 
 dump:
-	sudo ./tests/fbgrab -d /dev/fb1 output.png
+	sudo ./tests/fbgrab -d $(FBDEV) $(OUT)
 
 rmmod:
-	sudo sh -c 'echo 0 > /sys/class/vtconsole/vtcon1/bind'
-	sudo rmmod $(MODULE_NAME)
+	-sudo sh -c 'echo 0 > /sys/class/vtconsole/vtcon1/bind'
+	-sudo rmmod $(MODULE_NAME)
 
 obj-m += $(MODULE_NAME).o

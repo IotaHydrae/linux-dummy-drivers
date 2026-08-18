@@ -26,7 +26,8 @@ bear -- make
 
 ### Load and remove
 
-Command below will do rmmod and insmod sequentially.
+Command below will rebuild, unbind fbcon if it is bound, and then do rmmod
+and insmod sequentially.
 
 ```bash
 make test
