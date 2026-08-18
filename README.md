@@ -28,7 +28,7 @@ userspace tools. It is a good starting point if you want to develop an actual ha
 - [x] [regulator](regulator/README.md)
 - [x] [static_call](static_call/README.md)
 - [ ] usb host
-- [ ] sound
+- [ ] sound - ALSA
 - [ ] dma engine
 
 ## How to use
@@ -41,7 +41,13 @@ See `README.md` file in each driver directory.
 
 ## Reference
 
+### ALSA
+
+- [Writing an ALSA Driver](https://www.kernel.org/doc/html/latest/sound/kernel-api/writing-an-alsa-driver.html)
+
 ### DMA Engine
+
+- [suniv-dma](https://github.com/IotaHydrae/suniv-dma) - The DMA Engine driver for Allwinner Suniv SoC
 
 ### i2c adapter
 
