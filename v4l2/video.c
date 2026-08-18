@@ -91,7 +91,7 @@ static struct dummy_frame frames[] = {
 
 static void dummy_video_timer_func(struct timer_list *tl)
 {
-	struct dummy_video *dv = from_timer(dv, tl, timer);
+	struct dummy_video *dv = timer_container_of(dv, tl, timer);
 	struct dummy_video_frame_buf *buf;
 	struct dummy_frame *df;
 	unsigned long flags;
@@ -193,7 +193,7 @@ static void dummy_video_stop_streaming(struct vb2_queue *vq)
 
 	debug("\n");
 
-	del_timer_sync(&dv->timer);
+	timer_delete_sync(&dv->timer);
 
 	spin_lock_irqsave(&dv->queued_bufs_slock, flags);
 	while (!list_empty(&dv->queued_bufs)) {
@@ -454,7 +454,7 @@ static void __exit dummy_video_drv_unregister(struct dummy_video *dv)
 {
 	debug("\n");
 
-	del_timer_sync(&dv->timer);
+	timer_delete_sync(&dv->timer);
 
 	mutex_lock(&dv->vb_queue_mlock);
 	mutex_lock(&dv->v4l2_mlock);
