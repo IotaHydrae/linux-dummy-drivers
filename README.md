@@ -9,17 +9,24 @@ userspace tools. It is a good starting point if you want to develop an actual ha
 
 | -              | -                                  |
 | -------------- | ---------------------------------- |
-| Distro         | Ubuntu 24.04.3 LTS                 |
-| Kernel Version | 6.6.114.1-microsoft-standard-WSL2+ |
+| Distro         | Ubuntu 26.04 LTS                   |
+| Kernel Version | 6.18.40.1-microsoft-standard-WSL2+ |
 
 ## Development status
 
-- [x] v4l2 dummy camera video dev
-- [x] legacy framebuffer dev
-- [x] drm_simple_pipe
-- [x] i2c adapter
-- [x] spi master
-- [x] gpiochip
+- [x] [hello world](hello/)
+- [x] [dummy bus](bus/dummy_bus/README.md) (basic_bus / dummy_bus)
+- [x] [v4l2 dummy camera video dev](v4l2/README.md)
+- [x] [legacy framebuffer dev](fbdev/README.md)
+- [ ] drm
+  - [x] [drm_simple_display_pipe](drm/drm_simple_display_pipe/README.md)
+  - [ ] full virtual drm driver (complete DRM chain, without drm_simple_display_pipe)
+- [x] [i2c adapter](i2c/README.md)
+- [x] [spi master](spi/README.md)
+- [x] [gpiochip](gpio/README.md)
+- [x] [firmware loader](firmware/README.md)
+- [x] [regulator](regulator/README.md)
+- [x] [static_call](static_call/README.md)
 - [ ] usb host
 - [ ] sound
 - [ ] dma engine
