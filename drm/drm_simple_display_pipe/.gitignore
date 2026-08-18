@@ -1,0 +1,23 @@
+# Kernel module build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+*.cmd
+*.d
+Module.symvers
+modules.order
+compile_commands.json
+
+# Test binaries
+tests/fb_rectangle
+tests/fb_str
+tests/fbcat
+
+# Framebuffer dump
+/dump.png
+
+# Local tooling
+.agents/
+.cache/
+.codex/
