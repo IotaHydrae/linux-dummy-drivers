@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  *
- * Copyright (C) 2025 embeddedboys, Ltd.
+ * Copyright (C) 2026 embeddedboys, Ltd.
  *
- * Author: Hua Zheng <hua.zheng@embeddedboys.com>
+ * Author: Wooden Chair <hua.zheng@embeddedboys.com>
  */
 
 #define pr_fmt(fmt) "dummy-fb: " fmt
@@ -11,11 +11,15 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/fs.h>
+#include <linux/vmalloc.h>
 #include <linux/fb.h>
 
 #define DRV_NAME "dummy-fb"
 
 struct dummy_fb {
+    dev_t dev_num;
+
     struct class *class;
     struct device *dev;
 
@@ -41,7 +45,7 @@ struct dummy_display {
     u32     rotate;
 };
 
-static struct dummy_fb *dfb;
+static struct dummy_fb dfb;
 
 static const struct dummy_display display = {
     .xres = 480,
@@ -53,7 +57,7 @@ static const struct dummy_display display = {
 static ssize_t dummy_fb_read(struct fb_info *info, char __user *buf,
 			   size_t count, loff_t *ppos)
 {
-    pr_info("%s\n", __func__);
+    dev_info(info->dev, "%s\n", __func__);
     return fb_sys_read(info, buf, count, ppos);
 }
 
@@ -61,7 +65,7 @@ static ssize_t dummy_fb_write(struct fb_info *info, const char __user *buf,
 			    size_t count, loff_t *ppos)
 {
     ssize_t ret = 0;
-    pr_info("%s: count=%zd, ppos=%llu\n", __func__,  count, *ppos);
+    dev_info(info->dev, "%s: count=%zd, ppos=%llu\n", __func__,  count, *ppos);
     ret = fb_sys_write(info, buf, count, ppos);
     schedule_delayed_work(&info->deferred_work, info->fbdefio->delay);
     return ret;
@@ -69,19 +73,19 @@ static ssize_t dummy_fb_write(struct fb_info *info, const char __user *buf,
 
 static void dummy_fb_fillrect(struct fb_info *info, const struct fb_fillrect *rect)
 {
-    pr_info("%s\n", __func__);
+    dev_info(info->dev, "%s\n", __func__);
     sys_fillrect(info, rect);
 }
 
 static void dummy_fb_copyarea(struct fb_info *info, const struct fb_copyarea *area)
 {
-    pr_info("%s\n", __func__);
+    dev_info(info->dev, "%s\n", __func__);
     sys_copyarea(info, area);
 }
 
 static void dummy_fb_imageblit(struct fb_info *info, const struct fb_image *image)
 {
-    pr_info("%s\n", __func__);
+    dev_info(info->dev, "%s\n", __func__);
     sys_imageblit(info, image);
 }
 
@@ -100,7 +104,8 @@ static int dummy_fb_setcolreg(unsigned int regno, unsigned int red,
     unsigned int val;
     int ret = 1;
 
-    pr_info("%s(regno=%u, red=0x%X, green=0x%X, blue=0x%X, trans=0x%X)\n",
+    dev_info(info->dev,
+           "%s(regno=%u, red=0x%X, green=0x%X, blue=0x%X, trans=0x%X)\n",
            __func__, regno, red, green, blue, transp);
 
     if (regno >= 256)   /* no. of hw registers */
@@ -131,10 +136,10 @@ static int dummy_fb_blank(int blank, struct fb_info *info)
     case FB_BLANK_VSYNC_SUSPEND:
     case FB_BLANK_HSYNC_SUSPEND:
     case FB_BLANK_NORMAL:
-        pr_info("%s, blank\n", __func__);
+        dev_info(info->dev, "%s, blank\n", __func__);
         break;
     case FB_BLANK_UNBLANK:
-        pr_info("%s, unblank\n", __func__);
+        dev_info(info->dev, "%s, unblank\n", __func__);
         break;
     }
     return ret;
@@ -163,7 +168,8 @@ static void dummy_fb_deferred_io(struct fb_info *info, struct list_head *pageref
     if (y_end > 1)
         area.x2 = info->var.xres - 1;
 
-    pr_info("%s, dirty area: (%d, %d, %d, %d)\n", __func__, area.x1, area.y1, area.x2, area.y2);
+    dev_info(info->dev, "%s, dirty area: (%d, %d, %d, %d)\n", __func__,
+             area.x1, area.y1, area.x2, area.y2);
 }
 
 static int dummy_fb_alloc(struct dummy_fb *dfb)
@@ -176,7 +182,7 @@ static int dummy_fb_alloc(struct dummy_fb *dfb)
     int vmem_size;
     int rc;
 
-    pr_info("%s\n", __func__);
+    dev_info(dfb->dev, "%s\n", __func__);
 
     width  = display.xres;
     height = display.yres;
@@ -184,28 +190,28 @@ static int dummy_fb_alloc(struct dummy_fb *dfb)
     rotate = display.rotate;
 
     vmem_size = (width * height * bpp) / BITS_PER_BYTE;
-    pr_info("vmem_size: %d\n", vmem_size);
+    dev_info(dfb->dev, "vmem_size: %d\n", vmem_size);
     vmem = vzalloc(vmem_size);
     if (!vmem) {
-        pr_err("failed to allocate vmem\n");
+        dev_err(dfb->dev, "failed to allocate vmem\n");
         return -ENOMEM;
     }
 
     fbops = kzalloc(sizeof(*fbops), GFP_KERNEL);
     if (!fbops) {
-        pr_err("failed to allocate fbops\n");
+        dev_err(dfb->dev, "failed to allocate fbops\n");
         goto err_free_vmem;
     }
 
     fbdefio = kzalloc(sizeof(*fbdefio), GFP_KERNEL);
     if (!fbdefio) {
-        pr_err("failed to allocate fbdefio\n");
+        dev_err(dfb->dev, "failed to allocate fbdefio\n");
         goto err_free_fbops;
     }
 
     info = framebuffer_alloc(0, dfb->dev);
     if (!info) {
-        pr_err("failed to allocate info\n");
+        dev_err(dfb->dev, "failed to allocate info\n");
         goto err_free_fbdefio;
     }
 
@@ -217,6 +223,7 @@ static int dummy_fb_alloc(struct dummy_fb *dfb)
     fbops->owner        = THIS_MODULE;
     fbops->fb_read      = dummy_fb_read,
     fbops->fb_write     = dummy_fb_write;
+    fbops->fb_mmap      = fb_deferred_io_mmap;
     fbops->fb_fillrect  = dummy_fb_fillrect;
     fbops->fb_copyarea  = dummy_fb_copyarea;
     fbops->fb_imageblit = dummy_fb_imageblit;
@@ -251,7 +258,7 @@ static int dummy_fb_alloc(struct dummy_fb *dfb)
     info->var.transp.offset = 0;
     info->var.transp.length = 0;
 
-    info->flags = FBINFO_FLAG_DEFAULT | FBINFO_VIRTFB;
+    info->flags = FBINFO_VIRTFB;
     info->pseudo_palette = &dfb->pseudo_palette;
 
     fbdefio->delay = HZ / display.fps;
@@ -261,11 +268,11 @@ static int dummy_fb_alloc(struct dummy_fb *dfb)
 
     rc = register_framebuffer(info);
     if (rc < 0) {
-        pr_err("framebuffer register failed with %d!", rc);
+        dev_err(dfb->dev, "framebuffer register failed with %d!\n", rc);
         return -1;
     }
 
-    pr_info("%d KB video memory\n", info->fix.smem_len >> 10);
+    dev_info(dfb->dev, "%d KB video memory\n", info->fix.smem_len >> 10);
 
     return 0;
 
@@ -278,47 +285,49 @@ err_free_vmem:
     return -ENOMEM;
 }
 
-static int __init dummy_fb_init(void)
+static int __init dummy_fb_drv_register(struct dummy_fb *dfb)
 {
-    pr_info("%s\n", __func__);
+    int rc, ret;
 
-    dfb = kzalloc(sizeof(*dfb), GFP_KERNEL);
-    if (!dfb) {
-        pr_err("failed to allocate dfb\n");
-        return -ENOMEM;
-    };
+    ret = alloc_chrdev_region(&dfb->dev_num, 0, 1, DRV_NAME);
+    if (ret < 0) {
+        pr_err("failed to allocate chrdev region\n");
+        return ret;
+    }
 
-    dfb->class = class_create(THIS_MODULE, DRV_NAME "class");
+    dfb->class = class_create(DRV_NAME "class");
     if (IS_ERR(dfb->class)) {
         pr_err("failed to create class\n");
-        goto err_free_dfb;
+        goto out_dev_num;
     }
 
-    dfb->dev = device_create(dfb->class, NULL, MKDEV(0, 0), NULL, DRV_NAME "dev");
+    dfb->dev = device_create(dfb->class, NULL, dfb->dev_num, NULL, DRV_NAME "dev");
     if (IS_ERR(dfb->dev)) {
         pr_err("failed to create device\n");
-        goto err_free_class;
+        goto out_class;
     }
 
-    dummy_fb_alloc(dfb);
+    /* framebuffer alloc & register */
+    rc = dummy_fb_alloc(dfb);
+    if (rc < 0) {
+        dev_err(dfb->dev, "failed to alloc dummy fb\n");
+        goto out_dev;
+    }
+
     return 0;
 
-err_free_class:
+out_dev:
+    device_destroy(dfb->class, dfb->dev_num);
+out_class:
     class_destroy(dfb->class);
-err_free_dfb:
-    kfree(dfb);
-    return -ENOMEM;
+out_dev_num:
+    unregister_chrdev_region(dfb->dev_num, 1);
+    return -ENODEV;
 }
 
-static void __exit dummy_fb_exit(void)
+static void __exit dummy_fb_drv_unregister(struct dummy_fb *dfb)
 {
-    pr_info("%s\n", __func__);
-
-    if (dfb->dev)
-        device_destroy(dfb->class, MKDEV(0, 0));
-
-    if (dfb->class)
-        class_destroy(dfb->class);
+    dev_info(dfb->dev, "%s\n", __func__);
 
     if (dfb->info) {
         fb_deferred_io_cleanup(dfb->info);
@@ -327,10 +336,13 @@ static void __exit dummy_fb_exit(void)
         framebuffer_release(dfb->info);
     }
 
-    kfree(dfb);
+    dev_info(dfb->dev, "%s, Goodbye.\n", __func__);
+    device_destroy(dfb->class, dfb->dev_num);
+    class_destroy(dfb->class);
+    unregister_chrdev_region(dfb->dev_num, 1);
 }
 
-module_init(dummy_fb_init);
-module_exit(dummy_fb_exit);
-MODULE_AUTHOR("Hua Zheng <hua.zheng@embeddedboys.com>");
+module_driver(dfb, dummy_fb_drv_register, dummy_fb_drv_unregister);
+MODULE_AUTHOR("Wooden Chair <hua.zheng@embeddedboys.com>");
+MODULE_DESCRIPTION("Dummy framebuffer driver");
 MODULE_LICENSE("GPL");
