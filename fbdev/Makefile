@@ -26,4 +26,8 @@ test: all
 dump:
 	sudo ./tests/fbgrab -d /dev/fb1 output.png
 
+rmmod:
+	sudo sh -c 'echo 0 > /sys/class/vtconsole/vtcon1/bind'
+	sudo rmmod $(MODULE_NAME)
+
 obj-m += $(MODULE_NAME).o
